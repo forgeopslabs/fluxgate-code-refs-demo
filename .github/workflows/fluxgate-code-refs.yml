@@ -15,7 +15,7 @@ name: FluxGate code references
 
 on:
   push:
-    branches: [main] # change to your default branch; add other branches to scan
+    branches: [main, 'feature/**'] # change to your default branch; add other branches to scan
   delete:
   schedule:
     - cron: '0 6 * * 1' # cleanup-issues, Mondays 06:00 UTC; opt in with FLUXGATE_CLEANUP_ISSUES
