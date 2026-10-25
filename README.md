@@ -5,3 +5,4 @@ template (`.github/workflows/fluxgate-code-refs.yml`). The code under `src/`
 reads a few FluxGate flags so the scan has references to find.
 
 The workflow scans `main` and `feature/**` branches.
+Scans upload to a FluxGate demo install.
