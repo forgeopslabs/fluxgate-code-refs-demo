@@ -1,0 +1,189 @@
+# FluxGate code references: on every push to the default branch, scan this
+# repository for flag keys and upload where each flag is used. Only file paths,
+# line numbers and a few redacted lines leave the runner. When a branch is
+# deleted, the prune job deletes the stored scan of that branch. With the variable
+# FLUXGATE_CLEANUP_ISSUES=true, the cleanup-issues job opens one issue per flag
+# whose code should be removed (weekly, or when run by hand).
+#
+# Copy this file to .github/workflows/fluxgate-code-refs.yml, then set:
+#   secrets: FLUXGATE_URL (for example https://flags.example.com/api/v1) and
+#            FLUXGATE_TOKEN (a system client token with code_refs:write and evaluate)
+#   variables: FLUXGATE_VERSION (the FluxGate release, for example v1.3.0) and,
+#            optionally, FLUXGATE_DOWNLOAD_BASE, FLUXGATE_CONTEXT_LINES, FLUXGATE_SCAN_ARGS
+# Guide: https://flux.forgeopslabs.com/docs/code-references/code-refs-github-actions/
+name: FluxGate code references
+
+on:
+  push:
+    branches: [main] # change to your default branch; add other branches to scan
+  delete:
+  schedule:
+    - cron: '0 6 * * 1' # cleanup-issues, Mondays 06:00 UTC; opt in with FLUXGATE_CLEANUP_ISSUES
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  code-refs:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Scan and upload code references
+        shell: bash
+        env:
+          FLUXGATE_URL: ${{ secrets.FLUXGATE_URL }}
+          FLUXGATE_TOKEN: ${{ secrets.FLUXGATE_TOKEN }}
+          FLUXGATE_VERSION: ${{ vars.FLUXGATE_VERSION }}
+          FLUXGATE_DOWNLOAD_BASE: ${{ vars.FLUXGATE_DOWNLOAD_BASE }}
+          FLUXGATE_CONTEXT_LINES: ${{ vars.FLUXGATE_CONTEXT_LINES }}
+          FLUXGATE_SCAN_ARGS: ${{ vars.FLUXGATE_SCAN_ARGS }}
+          FLUXGATE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # BEGIN fluxgate-code-refs-scan
+          set -eu
+          : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
+          : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) platform=linux-x86_64 ;;
+            Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
+            Darwin-arm64) platform=macos-arm64 ;;
+            Darwin-x86_64) platform=macos-x86_64 ;;
+            *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/$archive" "$base/$archive"
+          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          # Exact name match: a pattern would take the dots in the version as wildcards.
+          awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
+          if [ ! -s "$work/archive.sha256" ]; then
+            echo "fluxgate: ${archive} is not listed in ${base}/SHA256SUMS" >&2
+            exit 1
+          fi
+          if command -v sha256sum > /dev/null; then
+            (cd "$work" && sha256sum -c archive.sha256)
+          else
+            (cd "$work" && shasum -a 256 -c archive.sha256)
+          fi
+          tar -xzf "$work/$archive" -C "$work"
+          # FLUXGATE_SCAN_ARGS is split on spaces; quotes in it are not removed, and
+          # globs in it are passed as written (no expansion against the checkout).
+          set -f
+          "$work/fluxgate" code-refs scan --context-lines "${FLUXGATE_CONTEXT_LINES:-1}" \
+            ${FLUXGATE_DEFAULT_BRANCH:+--default-branch "$FLUXGATE_DEFAULT_BRANCH"} ${FLUXGATE_SCAN_ARGS:-}
+          # END fluxgate-code-refs-scan
+
+  prune:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the code references of the deleted branch
+        shell: bash
+        env:
+          FLUXGATE_URL: ${{ secrets.FLUXGATE_URL }}
+          FLUXGATE_TOKEN: ${{ secrets.FLUXGATE_TOKEN }}
+          FLUXGATE_VERSION: ${{ vars.FLUXGATE_VERSION }}
+          FLUXGATE_DOWNLOAD_BASE: ${{ vars.FLUXGATE_DOWNLOAD_BASE }}
+          FLUXGATE_DELETED_BRANCH: ${{ github.event.ref }}
+        run: |
+          # BEGIN fluxgate-code-refs-prune
+          set -eu
+          : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
+          : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) platform=linux-x86_64 ;;
+            Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
+            Darwin-arm64) platform=macos-arm64 ;;
+            Darwin-x86_64) platform=macos-x86_64 ;;
+            *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/$archive" "$base/$archive"
+          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          # Exact name match: a pattern would take the dots in the version as wildcards.
+          awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
+          if [ ! -s "$work/archive.sha256" ]; then
+            echo "fluxgate: ${archive} is not listed in ${base}/SHA256SUMS" >&2
+            exit 1
+          fi
+          if command -v sha256sum > /dev/null; then
+            (cd "$work" && sha256sum -c archive.sha256)
+          else
+            (cd "$work" && shasum -a 256 -c archive.sha256)
+          fi
+          tar -xzf "$work/$archive" -C "$work"
+          "$work/fluxgate" code-refs prune --branch "$FLUXGATE_DELETED_BRANCH"
+          # END fluxgate-code-refs-prune
+
+  cleanup-issues:
+    if: vars.FLUXGATE_CLEANUP_ISSUES == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open removal issues for flags to clean up
+        shell: bash
+        env:
+          FLUXGATE_URL: ${{ secrets.FLUXGATE_URL }}
+          FLUXGATE_TOKEN: ${{ secrets.FLUXGATE_TOKEN }}
+          FLUXGATE_VERSION: ${{ vars.FLUXGATE_VERSION }}
+          FLUXGATE_DOWNLOAD_BASE: ${{ vars.FLUXGATE_DOWNLOAD_BASE }}
+          FLUXGATE_CLEANUP_MAX_ISSUES: ${{ vars.FLUXGATE_CLEANUP_MAX_ISSUES }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # BEGIN fluxgate-code-refs-cleanup-issues
+          set -eu
+          : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
+          : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) platform=linux-x86_64 ;;
+            Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
+            Darwin-arm64) platform=macos-arm64 ;;
+            Darwin-x86_64) platform=macos-x86_64 ;;
+            *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/$archive" "$base/$archive"
+          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          # Exact name match: a pattern would take the dots in the version as wildcards.
+          awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
+          if [ ! -s "$work/archive.sha256" ]; then
+            echo "fluxgate: ${archive} is not listed in ${base}/SHA256SUMS" >&2
+            exit 1
+          fi
+          if command -v sha256sum > /dev/null; then
+            (cd "$work" && sha256sum -c archive.sha256)
+          else
+            (cd "$work" && shasum -a 256 -c archive.sha256)
+          fi
+          tar -xzf "$work/$archive" -C "$work"
+          out="${RUNNER_TEMP:-$work}/fluxgate-checklists"
+          "$work/fluxgate" code-refs checklist --out-dir "$out"
+          max="${FLUXGATE_CLEANUP_MAX_ISSUES:-10}"
+          tab="$(printf '\t')"
+          tail -n +2 "$out/index.tsv" | {
+            opened=0
+            while IFS="$tab" read -r file key title; do
+              [ "$opened" -lt "$max" ] || break
+              open_titles="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json title --jq '.[].title')"
+              if printf '%s\n' "$open_titles" | grep -Fqx -- "$title"; then
+                echo "fluxgate: an open issue exists for ${key}"
+                continue
+              fi
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$out/$file"
+              opened=$((opened + 1))
+            done
+          }
+          # END fluxgate-code-refs-cleanup-issues
