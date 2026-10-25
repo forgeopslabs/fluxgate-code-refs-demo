@@ -1,0 +1,12 @@
+name: Probe site download
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in https://flux.forgeopslabs.com/downloads/code-refs/fluxgate-code-refs.github.yml https://flux.forgeopslabs.com/downloads/docker-compose.demo.yml; do
+            code=$(curl -sS -o body -w '%{http_code}' "$u"); echo "$code $u"; head -c 80 body; echo
+          done
