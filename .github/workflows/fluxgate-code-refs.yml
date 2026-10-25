@@ -8,8 +8,11 @@
 # Copy this file to .github/workflows/fluxgate-code-refs.yml, then set:
 #   secrets: FLUXGATE_URL (for example https://flags.example.com/api/v1) and
 #            FLUXGATE_TOKEN (a system client token with code_refs:write and evaluate)
-#   variables: FLUXGATE_VERSION (the FluxGate release, for example v1.3.0) and,
+#   variables: FLUXGATE_VERSION (the FluxGate release, for example v2.0.0) and,
 #            optionally, FLUXGATE_DOWNLOAD_BASE, FLUXGATE_CONTEXT_LINES, FLUXGATE_SCAN_ARGS
+# The jobs download the fluxgate CLI of that release from
+# https://flux.forgeopslabs.com/downloads/releases/<version>/ and check it against its
+# SHA256SUMS; FLUXGATE_DOWNLOAD_BASE points them at a mirror instead.
 # Guide: https://flux.forgeopslabs.com/docs/code-references/code-refs-github-actions/
 name: FluxGate code references
 
@@ -47,19 +50,21 @@ jobs:
           set -eu
           : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
           : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
-          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
-          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v2.0.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://flux.forgeopslabs.com/downloads/releases/${FLUXGATE_VERSION}}"
           case "$(uname -s)-$(uname -m)" in
             Linux-x86_64) platform=linux-x86_64 ;;
             Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
             Darwin-arm64) platform=macos-arm64 ;;
-            Darwin-x86_64) platform=macos-x86_64 ;;
             *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
           esac
           archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
           work="$(mktemp -d)"
-          curl -fsSL -o "$work/$archive" "$base/$archive"
-          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          if ! curl -fsSL -o "$work/$archive" "$base/$archive" ||
+            ! curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"; then
+            echo "fluxgate: cannot download $base/$archive or its SHA256SUMS. An HTTP 403 is usually a bot check in front of the download site: point FLUXGATE_DOWNLOAD_BASE at a mirror your runners can reach." >&2
+            exit 1
+          fi
           # Exact name match: a pattern would take the dots in the version as wildcards.
           awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
           if [ ! -s "$work/archive.sha256" ]; then
@@ -96,19 +101,21 @@ jobs:
           set -eu
           : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
           : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
-          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
-          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v2.0.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://flux.forgeopslabs.com/downloads/releases/${FLUXGATE_VERSION}}"
           case "$(uname -s)-$(uname -m)" in
             Linux-x86_64) platform=linux-x86_64 ;;
             Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
             Darwin-arm64) platform=macos-arm64 ;;
-            Darwin-x86_64) platform=macos-x86_64 ;;
             *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
           esac
           archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
           work="$(mktemp -d)"
-          curl -fsSL -o "$work/$archive" "$base/$archive"
-          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          if ! curl -fsSL -o "$work/$archive" "$base/$archive" ||
+            ! curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"; then
+            echo "fluxgate: cannot download $base/$archive or its SHA256SUMS. An HTTP 403 is usually a bot check in front of the download site: point FLUXGATE_DOWNLOAD_BASE at a mirror your runners can reach." >&2
+            exit 1
+          fi
           # Exact name match: a pattern would take the dots in the version as wildcards.
           awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
           if [ ! -s "$work/archive.sha256" ]; then
@@ -144,19 +151,21 @@ jobs:
           set -eu
           : "${FLUXGATE_URL:?set FLUXGATE_URL to your FluxGate API URL}"
           : "${FLUXGATE_TOKEN:?set FLUXGATE_TOKEN to a system client token with code_refs:write and evaluate}"
-          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v1.3.0}"
-          base="${FLUXGATE_DOWNLOAD_BASE:-https://github.com/keaz/feature-toggle/releases/download/${FLUXGATE_VERSION}}"
+          : "${FLUXGATE_VERSION:?set FLUXGATE_VERSION, for example v2.0.0}"
+          base="${FLUXGATE_DOWNLOAD_BASE:-https://flux.forgeopslabs.com/downloads/releases/${FLUXGATE_VERSION}}"
           case "$(uname -s)-$(uname -m)" in
             Linux-x86_64) platform=linux-x86_64 ;;
             Linux-aarch64 | Linux-arm64) platform=linux-arm64 ;;
             Darwin-arm64) platform=macos-arm64 ;;
-            Darwin-x86_64) platform=macos-x86_64 ;;
             *) echo "fluxgate: no CLI build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
           esac
           archive="fluxgate-${FLUXGATE_VERSION}-${platform}.tar.gz"
           work="$(mktemp -d)"
-          curl -fsSL -o "$work/$archive" "$base/$archive"
-          curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+          if ! curl -fsSL -o "$work/$archive" "$base/$archive" ||
+            ! curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS"; then
+            echo "fluxgate: cannot download $base/$archive or its SHA256SUMS. An HTTP 403 is usually a bot check in front of the download site: point FLUXGATE_DOWNLOAD_BASE at a mirror your runners can reach." >&2
+            exit 1
+          fi
           # Exact name match: a pattern would take the dots in the version as wildcards.
           awk -v name="$archive" '$2 == name || $2 == "*" name' "$work/SHA256SUMS" > "$work/archive.sha256"
           if [ ! -s "$work/archive.sha256" ]; then
